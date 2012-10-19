@@ -28,7 +28,7 @@
 // ----------------------------------------------------------------------------
 //
 //
-// OpenSteer Boids
+// OpenSteer Preys
 // 
 // 09-26-02 cwr: created 
 //
@@ -37,6 +37,8 @@
 
 
 #include <sstream>
+#include <time.h>
+#include <vector>
 #include "OpenSteer/SimpleVehicle.h"
 #include "OpenSteer/OpenSteerDemo.h"
 #include "OpenSteer/Proximity.h"
@@ -57,33 +59,30 @@ typedef OpenSteer::AbstractTokenForProximityDatabase<AbstractVehicle*> Proximity
 // ----------------------------------------------------------------------------
 
 
-class MyAgent : public OpenSteer::SimpleVehicle
+class Prey : public OpenSteer::SimpleVehicle
 {
 public:
 
-    // type for a flock: an STL vector of Boid pointers
-    typedef std::vector<MyAgent*> groupType;
+    // type for a flock: an STL vector of Prey pointers
+    typedef std::vector<Prey*> groupType;
 
-	typedef enum AgentType { PREDATOR, PREY };
 
     // constructor
-    MyAgent (ProximityDatabase& pd, AgentType agentType)
+    Prey (ProximityDatabase& pd)
     {
-        // allocate a token for this boid in the proximity database
+        // allocate a token for this Prey in the proximity database
         proximityToken = NULL;
         newPD (pd);
 
-		thisAgentType = agentType;
-
-        // reset all boid state
+        // reset all Prey state
         reset ();
     }
 
 
     // destructor
-    ~MyAgent ()
+    ~Prey ()
     {
-        // delete this boid's token in the proximity database
+        // delete this Prey's token in the proximity database
         delete proximityToken;
     }
 
@@ -114,14 +113,10 @@ public:
     }
 
 
-    // draw this boid into the scene
-    void draw (void)
+    // draw this Prey into the scene
+    virtual void draw (void)
     {
-		// Draw predator agents as red and prey agents as grey
-		if(thisAgentType == PREDATOR)
-			drawBasic3dSphericalVehicle (*this, gRed);
-		else if(thisAgentType == PREY)
-			drawBasic3dSphericalVehicle (*this, gGray70);
+        drawBasic3dSphericalVehicle (*this, gGray70);
         // drawTrail ();
     }
 
@@ -138,7 +133,7 @@ public:
 
 
     // basic flocking
-    Vec3 steerToFlock (void)
+    virtual Vec3 steerToFlock (void)
     {
         const float separationRadius =  5.0f;
         const float separationAngle  = -0.707f;
@@ -188,7 +183,7 @@ public:
 
     // Take action to stay within sphereical boundary.  Returns steering
     // value (which is normally zero) and may take other side-effecting
-    // actions such as kinematically changing the Boid's position.
+    // actions such as kinematically changing the Prey's position.
     Vec3 handleBoundary (void)
     {
         // while inside the sphere do noting
@@ -216,7 +211,7 @@ public:
     }
 
 
-    // make boids "bank" as they fly
+    // make Preys "bank" as they fly
     void regenerateLocalSpace (const Vec3& newVelocity,
                                const float elapsedTime)
     {
@@ -226,10 +221,10 @@ public:
     // switch to new proximity database -- just for demo purposes
     void newPD (ProximityDatabase& pd)
     {
-        // delete this boid's token in the old proximity database
+        // delete this Prey's token in the old proximity database
         delete proximityToken;
 
-        // allocate a token for this boid in the proximity database
+        // allocate a token for this Prey in the proximity database
         proximityToken = pd.allocateToken (this);
     }
 
@@ -242,7 +237,7 @@ public:
     }
     static int boundaryCondition;
 
-    // a pointer to this boid's interface object for the proximity database
+    // a pointer to this Prey's interface object for the proximity database
     ProximityToken* proximityToken;
 
     // allocate one and share amoung instances just to save memory usage
@@ -250,29 +245,80 @@ public:
     static AVGroup neighbors;
 
     static float worldRadius;
-
-	//Stores agent type as either PREDATOR or PREY
-	AgentType thisAgentType;
 };
 
 
-AVGroup MyAgent::neighbors;
-float MyAgent::worldRadius = 50.0f;
-int MyAgent::boundaryCondition = 0;
+AVGroup Prey::neighbors;
+float Prey::worldRadius = 50.0f;
+int Prey::boundaryCondition = 0;
+
+// Derivative class from Prey. Similar mechanics but slightly different behaviours.
+class Predator : public Prey
+{
+public:
+	Predator(ProximityDatabase& pd) : Prey (pd)
+	{
+		quarry = nullptr;
+	}
+	// Overloads Prey draw function to draw predators as red
+    void draw (void)
+    {
+        drawBasic3dSphericalVehicle (*this, gRed);
+    }
+	// A bit hacky - Overloads Prey steerToFlock function to look for prey and then chase prey. If none found it wanders.
+	Vec3 steerToFlock (void)
+	{
+		if(quarry == nullptr)
+			selectQuarry();
+
+		if(quarry == nullptr)
+			return steerForWander(5.0f);
+		else
+			return steerForPursuit(*quarry);
+	}
+	// Searches neighbouring agents for prey. If any are found it selects a random one and sets it as the quarry.
+	void selectQuarry()
+	{
+        neighbors.clear();
+        proximityToken->findNeighbors (position(), 10.0f, neighbors);
+
+		std::vector<AbstractVehicle*> local_prey;
+
+		for(auto itr = neighbors.begin(); itr != neighbors.end(); itr++)
+		{
+			// When an AbstractVehicle that is a prey is dynamic_cast as a predator, nullptr is returned, wheras predators return valid pointers.
+			// This can be used to determine which agents are predators and which are prey.
+			Predator* predator = dynamic_cast<Predator*>((*itr));
+			if(predator == nullptr)
+				local_prey.push_back((*itr));
+		}
+
+		if(!local_prey.empty())
+			quarry = local_prey.at(rand() % local_prey.size());
+	}
+private:
+	// The target for this predator. If this is nullptr, the predator will wander until it encounters a prey.
+	AbstractVehicle* quarry;
+};
+
 
 // ----------------------------------------------------------------------------
 // PlugIn for OpenSteerDemo
 
 
-class MyAgentPlugin : public PlugIn
+class PredatorPreyPlugIn : public PlugIn
 {
 public:
-    
-    const char* name (void) {return "MyAgent Predator/Prey Simulation";}
+    PredatorPreyPlugIn() : PlugIn()
+	{
+		srand((unsigned int)time(NULL));
+	}
 
-    float selectionOrderSortKey (void) {return 0.001f;}
+    const char* name (void) {return "Predator Prey Simulation";}
 
-    virtual ~MyAgentPlugin() {} // be more "nice" to avoid a compiler warning
+    float selectionOrderSortKey (void) {return 0.0001f;}
+
+    virtual ~PredatorPreyPlugIn() {} // be more "nice" to avoid a compiler warning
 
     void open (void)
     {
@@ -284,7 +330,6 @@ public:
         population = 0;
         for (int i = 0; i < 200; i++) addPreyToFlock ();
 		for (int i = 0; i < 10; i++) addPredatorToFlock ();
-
 
         // initialize camera
         OpenSteerDemo::init3dCamera (*OpenSteerDemo::selectedVehicle);
@@ -298,7 +343,7 @@ public:
 
     void update (const float currentTime, const float elapsedTime)
     {
-        // update flock simulation for each boid
+        // update flock simulation for each Prey
         for (iterator i = flock.begin(); i != flock.end(); i++)
         {
             (**i).update (currentTime, elapsedTime);
@@ -316,7 +361,7 @@ public:
         // update camera
         OpenSteerDemo::updateCamera (currentTime, elapsedTime, selected);
 
-        // draw each boid in flock
+        // draw each Prey in flock
         for (iterator i = flock.begin(); i != flock.end(); i++) (**i).draw ();
 
         // highlight vehicle nearest mouse
@@ -327,7 +372,7 @@ public:
 
         // display status in the upper left corner of the window
         std::ostringstream status;
-        status << "[F1/F2] " << population << " boids";
+        status << "[F1/F2] " << population << " Preys";
         status << "\n[F3]    PD type: ";
         switch (cyclePD)
         {
@@ -335,7 +380,7 @@ public:
         case 1: status << "brute force";    break;
         }
         status << "\n[F4]    Boundary: ";
-        switch (MyAgent::boundaryCondition)
+        switch (Prey::boundaryCondition)
         {
         case 0: status << "steer back when outside"; break;
         case 1: status << "wrap around (teleport)";  break;
@@ -349,7 +394,7 @@ public:
     void close (void)
     {
         // delete each member of the flock
-        while (population > 0) removeBoidFromFlock ();
+        while (population > 0) removePreyFromFlock ();
 
         // delete the proximity database
         delete pd;
@@ -358,7 +403,7 @@ public:
 
     void reset (void)
     {
-        // reset each boid in flock
+        // reset each Prey in flock
         for (iterator i = flock.begin(); i != flock.end(); i++) (**i).reset();
 
         // reset camera position
@@ -385,7 +430,7 @@ public:
                 const Vec3 center;
                 const float div = 10.0f;
                 const Vec3 divisions (div, div, div);
-                const float diameter = MyAgent::worldRadius * 1.1f * 2;
+                const float diameter = Prey::worldRadius * 1.1f * 2;
                 const Vec3 dimensions (diameter, diameter, diameter);
                 typedef LQProximityDatabase<AbstractVehicle*> LQPDAV;
                 pd = new LQPDAV (center, dimensions, divisions);
@@ -398,7 +443,7 @@ public:
             }
         }
 
-        // switch each boid to new PD
+        // switch each Prey to new PD
         for (iterator i=flock.begin(); i!=flock.end(); i++) (**i).newPD(*pd);
 
         // delete old PD (if any)
@@ -410,10 +455,9 @@ public:
         switch (keyNumber)
         {
         case 1:  addPreyToFlock ();               break;
-        case 2:  removeBoidFromFlock ();          break;
+        case 2:  removePreyFromFlock ();          break;
         case 3:  nextPD ();                       break;
-        case 4:  MyAgent::nextBoundaryCondition ();  break;
-		case 5:  addPredatorToFlock ();  break;
+        case 4:  Prey::nextBoundaryCondition ();  break;
         }
     }
 
@@ -423,54 +467,53 @@ public:
         message << "Function keys handled by ";
         message << '"' << name() << '"' << ':' << std::ends;
         OpenSteerDemo::printMessage (message);
-        OpenSteerDemo::printMessage ("  F1     add prey to the flock.");
-        OpenSteerDemo::printMessage ("  F2     remove last added boid from the flock.");
+        OpenSteerDemo::printMessage ("  F1     add a Prey to the flock.");
+        OpenSteerDemo::printMessage ("  F2     remove a Prey from the flock.");
         OpenSteerDemo::printMessage ("  F3     use next proximity database.");
         OpenSteerDemo::printMessage ("  F4     next flock boundary condition.");
-		OpenSteerDemo::printMessage ("  F5     add predator to the flock.");
         OpenSteerDemo::printMessage ("");
     }
 
     void addPreyToFlock (void)
     {
         population++;
-		MyAgent* agent = new MyAgent (*pd, MyAgent::AgentType::PREY);
-        flock.push_back (agent);
-        if (population == 1) OpenSteerDemo::selectedVehicle = agent;
+        Prey* prey = new Prey (*pd);
+        flock.push_back (prey);
+        if (population == 1) OpenSteerDemo::selectedVehicle = prey;
     }
 
     void addPredatorToFlock (void)
     {
         population++;
-		MyAgent* agent = new MyAgent (*pd, MyAgent::AgentType::PREDATOR);
-        flock.push_back (agent);
-        if (population == 1) OpenSteerDemo::selectedVehicle = agent;
+		Predator* predator = new Predator (*pd);
+        flock.push_back (predator);
+        if (population == 1) OpenSteerDemo::selectedVehicle = predator;
     }
 
-    void removeBoidFromFlock (void)
+    void removePreyFromFlock (void)
     {
         if (population > 0)
         {
-            // save a pointer to the last boid, then remove it from the flock
-            const MyAgent* agent = flock.back();
+            // save a pointer to the last Prey, then remove it from the flock
+            const Prey* prey = flock.back();
             flock.pop_back();
             population--;
 
             // if it is OpenSteerDemo's selected vehicle, unselect it
-            if (agent == OpenSteerDemo::selectedVehicle)
+            if (prey == OpenSteerDemo::selectedVehicle)
                 OpenSteerDemo::selectedVehicle = NULL;
 
-            // delete the Boid
-            delete agent;
+            // delete the Prey
+            delete prey;
         }
     }
 
-    // return an AVGroup containing each boid of the flock
+    // return an AVGroup containing each Prey of the flock
     const AVGroup& allVehicles (void) {return (const AVGroup&)flock;}
 
-    // flock: a group (STL vector) of pointers to all boids
-    MyAgent::groupType flock;
-    typedef MyAgent::groupType::const_iterator iterator;
+    // flock: a group (STL vector) of pointers to all Preys
+    Prey::groupType flock;
+    typedef Prey::groupType::const_iterator iterator;
 
     // pointer to database used to accelerate proximity queries
     ProximityDatabase* pd;
@@ -483,7 +526,7 @@ public:
 };
 
 
-MyAgentPlugin gMyAgentPlugIn;
+PredatorPreyPlugIn gPreyPlugIn;
 
 
 

@@ -69,7 +69,7 @@
     <ClCompile Include="Vec3.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="MyAgent.cpp">
+    <ClCompile Include="PredatorPrey.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
