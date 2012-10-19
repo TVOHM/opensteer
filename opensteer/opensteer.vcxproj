@@ -88,6 +88,7 @@
     <ClCompile Include="main.cpp" />
     <ClCompile Include="MapDrive.cpp" />
     <ClCompile Include="MultiplePursuit.cpp" />
+    <ClCompile Include="MyAgent.cpp" />
     <ClCompile Include="OneTurning.cpp" />
     <ClCompile Include="OpenSteerDemo.cpp" />
     <ClCompile Include="Pathway.cpp" />
