@@ -1,6 +1,6 @@
-/Debug/
+/Debug/*
 !/Debug/freeglut.dll
-/Release/
+/Release/*
 !/Release/freeglut.dll
 /ipch/
 oensteer.sdf
