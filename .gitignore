@@ -1,0 +1,9 @@
+!/Debug/freeglut.dll
+/Debug/
+!/Release/freeglut.dll
+/Release/
+/ipch/
+oensteer.sdf
+opensteer.opensdf
+/opensteer/Debug
+/opensteer/Release
